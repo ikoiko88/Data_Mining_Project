@@ -1,0 +1,169 @@
+library(ggplot2)
+library(proto)
+library(grid)
+
+wcloudGrob <- function (label,x = unit(0.5, "npc"), y = unit(0.5, "npc"), 
+                        just = "centre", hjust = NULL, vjust = NULL, rot = 0, check.overlap = TRUE, 
+                        default.units = "mm", name = NULL, gp = gpar(), vp = NULL,  f=7.62) {
+  require(tm)
+  if (is.character(label) || is.factor(label)) {
+    corpus <- Corpus(VectorSource(label))
+    corpus <- tm_map(corpus, removePunctuation)
+    #corpus <- tm_map(corpus, removeNumbers)
+    corpus <- tm_map(corpus, function(x) removeWords(x,stopwords()))
+  } else corpus <- label
+  tdm <- TermDocumentMatrix(corpus)
+  mat<- as.matrix(tdm)
+  v <- sort(rowSums(mat),decreasing=TRUE) 
+  word = names(v)
+  freq=v
+  
+  ######created by Ian Fellows
+  a=4
+  b=0.5
+  scales=freq/max(freq)
+  sizes=((a-b)*scales+b)
+  
+  loc<-matrix(nrow=length(word),ncol=2) # I added new matrix to store the coordinates
+  boxes<-list()
+  thetaStep <- 0.1
+  rStep <- 0.05
+  last <- 1
+  tails <- "g|j|p|q|y"
+  overlap <- function(x1, y1, sw1, sh1) {
+    s <- 0
+    if (length(boxes) == 0) 
+      return(FALSE)
+    for (i in c(last, 1:length(boxes))) {
+      bnds <- boxes[[i]]
+      x2 <- bnds[1]
+      y2 <- bnds[2]
+      sw2 <- bnds[3]
+      sh2 <- bnds[4]
+      if (x1 < x2) 
+        overlap <- x1 + sw1 > x2 - s
+      else overlap <- x2 + sw2 > x1 - s
+      if (y1 < y2) 
+        overlap <- overlap && (y1 + sh1 > y2 - s)
+      else overlap <- overlap && (y2 + sh2 > y1 - s)
+      if (overlap) {
+        last <<- i
+        return(TRUE)
+      }
+    }
+    FALSE
+  } 
+  
+  for(i in 1:length(sizes)){
+    r <- 0
+    theta <- runif(1, 0, 2 * pi)
+    x1=0.5
+    y1=0.5
+    w=strwidth(word[i],cex = sizes[i],"inches")/5.08  #I modified this to match the unit measurement for ggplot
+    h=strheight(word[i],cex = sizes[i],"inches")/5.08 #I modified this to match the unit measurement for ggplot
+    if (grepl(tails, word[i])) 
+      h <- h + h * 0.2
+    isOverlaped <- TRUE
+    while (isOverlaped) {
+      if (!overlap(x1 - 0.5 * w, y1 - 0.5 * h, w, h) && x1 - 0.5 * w > 0 && y1 - 0.5 * h > 0 && x1 + 0.5 * w < 1 && y1 + 0.5 * h < 1) {
+        boxes[[length(boxes) + 1]] <- c(x1 - 0.5 * w, 
+                                        y1 - 0.5 * h, w, h)
+        loc[i,]=c(x1,y1)  #I modified this to store the coordinates that are not overlapped
+        isOverlaped <- FALSE
+      } else
+      {
+        if (r > sqrt(0.5)) {
+          isOverlaped <- FALSE
+        }
+        theta <- theta + thetaStep
+        r <- r + (rStep * thetaStep/(2 * pi))
+        x1 <- 0.5 + r * cos(theta)
+        y1 <- 0.5 + r * sin(theta)
+      }
+    }
+  } 
+  ###### 
+  
+  x <- unit(loc[,1], default.units)
+  y <- unit(loc[,2], default.units)
+  
+  grob(label = word, x = x, y = y, just = just, hjust = hjust, 
+       vjust = vjust, rot = rot, check.overlap = check.overlap, 
+       name = name, gp = gp, vp = vp, cl = "text")
+  tg <- textGrob(label = word, x = x, y = y,  just = just, hjust = hjust, 
+                 vjust = vjust, rot = rot, check.overlap = check.overlap, gp=gpar(cex=sizes))
+  
+  gTree(children=gList(tg), vp=vp, gp=gp, name=name)
+}
+
+GeomWordCloud <- proto(ggplot2:::GeomText, {
+  objname <- "word_cloud"
+  
+  draw <- function(., data, scales, coordinates, ..., parse = FALSE, na.rm = FALSE) {
+    data <- remove_missing(data, na.rm, 
+                           c("label"), name = "geom_word_cloud")
+    
+    lab <- data$label
+    
+    with(coord_transform(coordinates, data, scales),
+         wcloudGrob(lab, x, y, default.units="native", 
+                    hjust=hjust, vjust=vjust, rot=angle, 
+                    gp = gpar(col = alpha(colour, alpha),
+                              fontfamily = family, fontface = fontface, lineheight = lineheight))
+    )
+  }
+})
+
+geom_word_cloud <- function (mapping = NULL, data = NULL, stat = "identity", position = "identity", 
+                             parse = FALSE,  ...) { 
+  GeomWordCloud$new(mapping = mapping, data = data, stat = stat,position = position, 
+                    parse = parse, ...)
+}
+
+words2="South Korea high-energy capital moves at a pace that rivals the world busiest, with its pulsing creative energy driving innovation in music, technology and fashion.
+Pali pali ??? meaning quick, quick ??? is not just a favourite expression in Seoul: it is a way of life.
+South Korea's capital moves at a pace that rivals the world's busiest cities, fostering a culture of hard work, service and just getting stuff done, residents say.
+It is the most high-energy, intense city I have ever lived in. I have lived in New York City and Tokyo, but Seoul beats them hands down, said Ruchika Sahai, who moved here 
+from Sydney, Australia, nearly two years ago. Office hours stretch well past 10 pm, but the drive of the nearly 10 million residents rarely wavers. Even beyond the modern city 
+streets, the underground markets pulse with a chaotic and old world vibe.
+While locals are busy, they are also friendly, open and willing to help. The people of Seoul say they are the Italians of the East and are proud of it, Sahai said. They 
+wear their hearts on their sleeve, belt out arguments, are very friendly and not afraid of showing emotion.
+There is a creative energy that pulses here too, that drives innovation in music, technology and fashion, and contributes to the city being one of the world strongest economies.
+South Koreans are trying to come up with the next big thing, said US student Taylor Evans, who recently participated in an exchange programme with Seoul Kookmin University. 
+Small businesses in Seoul really take on this challenge to entice customers, and in turn create outlets that are very creative and unorthodox.
+From a cafe where you can watch popular TV shows projected on a concrete wall, to a hair studio that doubles as a tea shop, to a bar that has its menus on bowling pins, Seoul's 
+businesses always play with new ideas . Every day is a new adventure, Evans said. 
+Where do you want to live?
+There are two kinds of expats that live in Seoul, Sahai explained. Those who want to recreate the comforts of their home country, and those who prefer to experience local life. 
+Itaewon, south of downtown, is the neighbourhood for the former, where international grocery stores and restaurants abound.  
+Sahai lives in Seongbuk-dong, to the northeast of downtown. Also popular with expats it has more cultural facets, such as art galleries, boutiques and hanok houses (residences built using traditional Korean architecture). Yeonhui-dong, to the west of downtown, is close to the International School and therefore perfect for expats with families, while French-speaking families live near Bangbae in the south for the nearby French School.
+Evans recommended the HapJeong area, near the Han River to the west of downtown. It is close to the popular arts-friendly and university neighbourhood of Hongdae, but not as busy and noisy. It is beautiful, unique and full of one-of-a-kind cafes and stores that you will not find anywhere else in Seoul, she said.
+What do you want to live in?
+Most locals live in the city many high-rise apartments. More affordable than houses, apartments also offer same-block access to services like doctors, dentists, grocery shopping and salons that the 24/7 culture demands.
+Houses are more common in the expat-friendly neighbourhoods of Itaewon, Seongbukdong, Yeonhui-dong and Bangbae. 
+Where can you travel?
+Seoul Incheon International Airport gives quick and affordable access to other Asian capitals. By air, Beijing is two hours away, Tokyo is two and a half hours, while Hong Kong is three and a half hours, and flights cost well under 350,000 South Korean won.
+The airport is even an attraction in and of itself. Incheon Airport is really something, said Mahogany Beckford, an American who has worked in the city in various stints. They have packed all sorts of attractions in there to entertain or pass the time as you wait for a flight. It has a great spa, a golf course, a skating rink, even a museum!
+Seoul extensive subway also makes it simple to take day trips. Suwon City, just an hour by subway, is a historic walled city ??? one of the country's oldest. Built in 1794, the Hwaseong Fortress epitomises the military history of the time and provides a natural escape, as the Suwoncheon stream flows through it, alongside peaceful green areas.   
+Farther afield, South Korea second largest city, Busan, has the bustling energy of a big city with the benefit of six beaches and a carnival boardwalk. Located 325km southeast of Seoul, it takes about 2.5 hours to reach by train and four by car.
+How much does it cost?
+Though it is more expensive than many of its fellow Asian capitals, Seoul is remarkably affordable for a city of its size ??? especially where transportation is concerned. The subway fare and bus fare is only 1,350 won and transfers are free. Taxis also are affordable at only 11,560 won for an 8km ride.
+Housing, too, is about 50% cheaper than similar accommodation in New York City or London, according to cost of living site Expatistan.com, at only 2,300,000 won for a 85sqm space.
+Skipping the Pop Tarts and Cheerios at international grocery stores can also save money, Sahai said. If you shop at the local stores and markets, it is super affordable, she said. And so much more fun!
+The only thing you're going to find expensive there is coffee, Evans said. I do not even want to calculate the amount of money I spent in Korea on coffee!"
+
+
+dats=data.frame(words2)
+qplot(0,0,data=dats,label=dats$words2) +geom_word_cloud(colour="red")
+
+p1=ggplot(data=dats,aes(x=0,y=0,label=dats$words2)) 
+p1+geom_word_cloud(colour="red")
+
+p=ggplot(data = mtcars, aes(x=wt, y=mpg, label=rownames(mtcars))) 
+p+geom_word_cloud(aes(colour=factor(cyl)))+scale_colour_discrete(l=40)
+
+#p+geom_text(aes(colour=factor(cyl))) 
+
+#as a comparison with the original wordcloud package
+library(wordcloud)
+wordcloud(words2)
